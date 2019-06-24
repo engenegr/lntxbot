@@ -1,6 +1,11 @@
 package main
 
 import (
+	"fmt"
+	"github.com/BurntSushi/toml"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
+	"golang.org/x/text/language"
+	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -36,6 +41,7 @@ type Settings struct {
 
 var err error
 var s Settings
+var bundle *i18n.Bundle
 var pg *sqlx.DB
 var ln *lightning.Client
 var rds *redis.Client
@@ -46,6 +52,14 @@ func main() {
 	err = envconfig.Process("", &s)
 	if err != nil {
 		log.Fatal().Err(err).Msg("couldn't process envconfig.")
+	}
+
+	langFiles := []string{"translations/en.toml", "translations/es.toml"}
+
+	bundle, err = CreateLocalizerBundle(langFiles)
+	if err != nil {
+		log.Fatal().Err(err).Msg("error initialising localization")
+		panic(err)
 	}
 
 	setupCommands()
@@ -163,4 +177,28 @@ func probeLightningd() string {
 		Msg("lightning node connected")
 
 	return nodeinfo.Get("id").String()
+}
+
+// CreateLocalizerBundle reads language files and registers them in i18n bundle
+func CreateLocalizerBundle(langFiles []string) (*i18n.Bundle, error) {
+	// Bundle stores a set of messages
+	bundle := &i18n.Bundle{DefaultLanguage: language.English}
+
+	// Enable bundle to understand yaml
+	bundle.RegisterUnmarshalFunc("toml", toml.Unmarshal)
+
+	var translations []byte
+	var err error
+	for _, file := range langFiles {
+		// Read our language toml file
+		translations, err = ioutil.ReadFile(file)
+		if err != nil {
+			log.Fatal().Err(err).Msg("Unable to read translation file")
+			return nil, err
+		}
+		// It parses the bytes in buffer to add translations to the bundle
+		bundle.MustParseMessageFileBytes(translations, file)
+	}
+
+	return bundle, nil
 }
