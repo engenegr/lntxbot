@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/BurntSushi/toml"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"golang.org/x/text/language"
@@ -182,7 +181,7 @@ func probeLightningd() string {
 // CreateLocalizerBundle reads language files and registers them in i18n bundle
 func CreateLocalizerBundle(langFiles []string) (*i18n.Bundle, error) {
 	// Bundle stores a set of messages
-	bundle := &i18n.Bundle{DefaultLanguage: language.English}
+	bundle = i18n.NewBundle(language.English)
 
 	// Enable bundle to understand yaml
 	bundle.RegisterUnmarshalFunc("toml", toml.Unmarshal)
