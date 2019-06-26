@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"regexp"
 	"strconv"
 	"strings"
@@ -12,7 +13,7 @@ import (
 	"github.com/lucsky/cuid"
 )
 
-func handleMessage(message *tgbotapi.Message) {
+func handleMessage(message *tgbotapi.Message, bundle i18n.Bundle) {
 	u, t, err := ensureUser(message.From.ID, message.From.UserName)
 	if err != nil {
 		log.Warn().Err(err).Int("case", t).
@@ -21,7 +22,10 @@ func handleMessage(message *tgbotapi.Message) {
 			Msg("failed to ensure user")
 		return
 	}
-
+	//TODO: add language selection probably at ensureUser (from db) or pull from chat and User info
+	//not sure how exactly this works in golang telegram-bot library
+	locale :=  "en-US"
+	//
 	if message.Chat.Type == "private" {
 		// after ensuring the user we should always enable him to
 		// receive payment notifications and so on, as not all people will
@@ -59,20 +63,46 @@ func handleMessage(message *tgbotapi.Message) {
 		if err != nil {
 			log.Warn().Err(err).Str("user", u.Username).Str("hash", hashfirstchars).
 				Msg("failed to get transaction")
-			u.notifyAsReply("Couldn't find transaction "+hashfirstchars+".", message.MessageID)
+			msg_templ := map[string]interface{}{
+				"HashFirstChars":             hashfirstchars,
+			}
+			msg_str, _ := translateTemplate("TxNotFound", locale, msg_templ)
+			u.notifyAsReply(msg_str, message.MessageID)
 			return
 		}
 
-		txnreply := mustache.Render(`
-<code>{{Status}}</code> {{#TelegramPeer.Valid}}{{PeerActionDescription}}{{/TelegramPeer.Valid}} on {{TimeFormat}} {{#IsUnclaimed}}(💤 unclaimed){{/IsUnclaimed}}
-<i>{{Description}}</i>{{^TelegramPeer.Valid}} 
-{{#Payee.Valid}}<b>Payee</b>: {{{PayeeLink}}} ({{PayeeAlias}}){{/Payee.Valid}}
-<b>Hash</b>: {{Hash}}{{/TelegramPeer.Valid}}{{#Preimage.Valid}} 
-<b>Preimage</b>: {{Preimage.String}}{{/Preimage.Valid}}
-<b>Amount</b>: {{Satoshis}} sat
-{{^IsReceive}}<b>Fee paid</b>: {{FeeSatoshis}}{{/IsReceive}}
-        `, txn) + "\n" + renderLogInfo(hashfirstchars)
-		id := u.notifyAsReply(txnreply, txn.TriggerMessage).MessageID
+		//TxInfo = "<code>{{.Status}}</code> {{ .PeerActionDescription}} on {{.TimeFormatted}} {{ .ClaimStatus}}
+		//<i>{{.Description}}</i>
+		//<b>Payee</b>: {{{.PayeeLink}}} ({{.PayeeAlias}})
+		//<b>Hash</b>: {{.Hash}}
+		//<b>Preimage</b>: {{.PreimageString}}
+		//<b>Amount</b>: {{.Amount}} sat
+		//<b>Fee paid</b>: {{.Fees}}"
+
+		claimStatus := ""
+		if txn.IsUnclaimed() {
+			claimStatus = "(💤 unclaimed)"
+		}
+
+		msgTemplate := map[string]interface{}{
+			"Status": txn.Status,
+			"PeerActionDescription": txn.PeerActionDescription(),
+			"TimeFormatted": txn.TimeFormat(),
+			"ClaimStatus": claimStatus,
+			"Description": txn.Description,
+			"PayeeLink": txn.PayeeLink(),
+			"PayeeAlias": txn.PayeeAlias(),
+			"Hash": txn.Hash,
+			"PreimageString": txn.Preimage,
+			"Amount": txn.Amount,
+			"Fees": txn.FeeSatoshis(),
+
+		}
+
+		translated, _ := translateTemplate("TxInfo", locale, msgTemplate)
+		translated += "\n" + renderLogInfo(hashfirstchars)
+
+		id := u.notifyAsReply(translated, txn.TriggerMessage).MessageID
 
 		if txn.Status == "PENDING" {
 			// allow people to cancel pending if they're old enough

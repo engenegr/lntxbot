@@ -1,3 +1,12 @@
+TxNotFound = "Couldn't find transaction {{.HashFirstChars}}."
+TxInfo = "<code>{{.Status}}</code> {{ .PeerActionDescription}} on {{.TimeFormatted}} {{ .ClaimStatus}}
+         <i>{{.Description}}</i>
+         <b>Payee</b>: {{{.PayeeLink}}} ({{.PayeeAlias}})
+         <b>Hash</b>: {{.Hash}}
+         <b>Preimage</b>: {{.PreimageString}}
+         <b>Amount</b>: {{.Amount}} sat
+         <b>Fee paid</b>: {{.Fees}}"
+
 HelpString = "For more information on each command please type <code>/help &lt;command&gt;</code>."
 
 Explanation = "{{.Explanation}}"

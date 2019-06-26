@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"strconv"
 	"strings"
 
@@ -9,7 +10,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func handle(upd tgbotapi.Update) {
+func handle(upd tgbotapi.Update, bundle i18n.Bundle) {
 	if upd.Message != nil {
 		// people joining
 		if upd.Message.NewChatMembers != nil {
@@ -21,7 +22,7 @@ func handle(upd tgbotapi.Update) {
 		// normal message
 		proceed := interceptMessage(upd.Message)
 		if proceed {
-			handleMessage(upd.Message)
+			handleMessage(upd.Message, bundle)
 		} else {
 			deleteMessage(upd.Message)
 		}
