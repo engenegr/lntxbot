@@ -10,7 +10,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func handle(upd tgbotapi.Update, bundle i18n.Bundle) {
+func handle(upd tgbotapi.Update, bundle *i18n.Bundle) {
 	if upd.Message != nil {
 		// people joining
 		if upd.Message.NewChatMembers != nil {

@@ -1,0 +1,17 @@
+TxNotFound = "Не могу найти транзакцию {{.HashFirstChars}}."
+TxInfo = "<code>{{.Status}}</code> {{ .PeerActionDescription}} on {{.TimeFormatted}} {{ .ClaimStatus}}\n<i>{{.Description}}</i>\n<b>Payee</b>: {{{.PayeeLink}}} ({{.PayeeAlias}})\n<b>Hash</b>: {{.Hash}}\n<b>Preimage</b>: {{.PreimageString}}\n<b>Amount</b>: {{.Amount}} sat\n<b>Fee paid</b>: {{.Fees}}"
+
+HelpString = "For more information on each command please type <code>/help &lt;command&gt;</code>."
+
+Explanation = "{{.Explanation}}"
+HelloPerson = "Hello {{.Name}}"
+
+[MyUnreadEmails]
+description = "The number of unread emails I have"
+one = "I have {{.PluralCount}} unread email."
+other = "I have {{.PluralCount}} unread emails."
+
+[PersonUnreadEmails]
+description = "The number of unread emails a person has"
+one = "{{.Name}} has {{.UnreadEmailCount}} unread email."
+other = "{{.Name}} has {{.UnreadEmailCount}} unread emails."

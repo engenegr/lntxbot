@@ -1,11 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/docopt/docopt-go"
-	"github.com/hoisie/mustache"
 	"github.com/kballard/go-shellquote"
 )
 
@@ -251,18 +249,22 @@ func parse(message string) (opts docopt.Opts, isCommand bool, err error) {
 	return
 }
 
-func handleHelp(u User, method string) (handled bool) {
+func handleHelp(u User, method string, locale string) (handled bool) {
 	var def def
 	var mainName string
 	var aliases []map[string]string
 	var helpString string
 	var ok bool
-
+	var argHelpKey, descHelpKey, examHelpKey, headerStr, argsStr, descStr, examStr, aliasesStr string
 	method = strings.ToLower(strings.TrimSpace(method))
+	msgTempl := map[string]interface{}{}
 	if method == "" {
-		helpString = "<pre>" + escapeHTML(strings.Replace(s.Usage, "  c ", "  /", -1)) + "</pre>"
-		helpString += `
-For more information on each command please type <code>/help &lt;command&gt;</code>.`
+		msgTempl = map[string]interface{}{
+			"Help": escapeHTML(strings.Replace(s.Usage, "  c ", "  /", -1)),
+		}
+		msgStr0, _ := translateTemplate("HelpIntro", locale, msgTempl)
+		msgStr1, _ := translateTemplate("HelpString", locale, msgTempl)
+		helpString = msgStr0 + "\n" + msgStr1
 		goto gothelpstring
 	}
 
@@ -281,11 +283,24 @@ For more information on each command please type <code>/help &lt;command&gt;</co
 	} else {
 		similar := findSimilar(method, commandList)
 		if len(similar) > 0 {
-			reply := fmt.Sprintf("/%s command not found. Do you mean /%s?", method, similar[0])
+			msgTempl := map[string]interface{}{
+				"Method": method,
+				"Similar": similar[0],
+			}
+			msgStr, _ := translateTemplate("SimilarMsg", locale, msgTempl)
+			reply := msgStr
 			if len(similar) > 1 {
-				reply += fmt.Sprintf(" Or maybe /%s?", similar[1])
+				msgTempl = map[string]interface{}{
+					"Similar": similar[1],
+				}
+				msgStr, _ = translateTemplate("SimilarOrMaybe", locale, msgTempl)
+				reply += msgStr
 				if len(similar) > 2 {
-					reply += fmt.Sprintf(" Perhaps /%s?", similar[2])
+					msgTempl = map[string]interface{}{
+						"Similar": similar[2],
+					}
+					msgStr, _ = translateTemplate("SimilarPerhaps", locale, msgTempl)
+					reply += msgStr
 				}
 			}
 			u.notify(reply)
@@ -296,40 +311,37 @@ For more information on each command please type <code>/help &lt;command&gt;</co
 	}
 
 	// here we have a working method definition
-	helpString = mustache.Render(`<pre>/{{ mainName }} {{ argstr }}</pre>
-{{ explanation }}
-{{#has_flags}}
+	argHelpKey = mainName+"HelpArgs"
+	argsStr, _ = translate(argHelpKey, locale)
+	descHelpKey = mainName+"HelpDesc"
+	descStr, _ = translate(descHelpKey, locale)
+	examHelpKey = mainName+"HelpExam"
+	examStr, _ = translate(examHelpKey, locale)
 
-<b>Flags</b>
-{{#flags}}<code>{{ Name }}</code>: {{ Explanation }}
-{{/flags}}{{/has_flags}}{{#has_examples}}
+	for _, alias := range def.aliases {
+		aliasesStr += alias+" "
+	}
 
-<b>Example{{#example_is_plural}}s{{/example_is_plural}}</b>
-{{#examples}}`+"<code>"+`{{Value}}`+"</code>"+`: {{ Explanation }}
-{{/examples}}{{/has_examples}}{{#inline}}
+	msgTempl = map[string]interface{}{
+		"MainName": mainName,
+		"Args": argsStr,
+		"Desc": descStr,
+		"Exam": examStr,
+		"Aliases": aliasesStr,
+		//"Explanation": def.explanation,
+		//"ServiceId": s.ServiceId,
+		//"InlineExample": def.inline_example,
 
-<b>Inline query</b>
-Can also be called as an <a href="https://core.telegram.org/bots/inline">inline query</a> from group or personal chats where the bot isn't added. The syntax is similar, but simplified: <code>@`+s.ServiceId+` {{inline_example}}</code> then wait for a "search" result to appear.
-{{/inline}}{{#has_aliases}}
+	}
 
-<b>Aliases</b>:{{#aliases}} <code>{{alias}}</code>{{/aliases}}{{/has_aliases}}
-    `, map[string]interface{}{
-		"mainName":          mainName,
-		"explanation":       def.explanation,
-		"argstr":            def.argstr,
-		"has_examples":      len(def.examples) > 0,
-		"has_flags":         len(def.flags) > 0,
-		"flags":             def.flags,
-		"examples":          def.examples,
-		"example_is_plural": len(def.examples) != 1,
-		"has_aliases":       len(aliases) > 0,
-		"aliases":           aliases,
-		"inline":            def.inline,
-		"inline_example":    def.inline_example,
-	})
+	headerStr, _ = translateTemplate("MethodHelpHeader", locale, msgTempl)
+	helpString = headerStr
+
 	goto gothelpstring
 
 gothelpstring:
 	u.notify(helpString)
 	return true
 }
+
+//<b>Inline query</b>\nCan also be called as an <a href=\"https://core.telegram.org/bots/inline\">inline query</a> from group or personal chats where the bot isn't added. The syntax is similar, but simplified: <code>@{{ServiceId}} {{.InlineExample}}</code> then wait for a \"search\" result to appear.\n<b>Aliases</b>: <code>{{.Aliases}}</code>

@@ -6,10 +6,8 @@ import (
 	"golang.org/x/text/language"
 	"io/ioutil"
 	"math/rand"
-	"net/http"
 	"net/url"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/fiatjaf/lightningd-gjson-rpc"
@@ -53,7 +51,7 @@ func main() {
 		log.Fatal().Err(err).Msg("couldn't process envconfig.")
 	}
 
-	langFiles := []string{"translations/en.toml", "translations/es.toml"}
+	langFiles := []string{"translations/en.toml", "translations/es.toml", "translations/ru.toml"}
 
 	bundle, err = CreateLocalizerBundle(langFiles)
 	if err != nil {
@@ -93,7 +91,7 @@ func main() {
 		log.Fatal().Err(err).Msg("")
 	}
 	log.Info().Str("username", bot.Self.UserName).Msg("telegram bot authorized")
-
+/*
 	// lightningd connection
 	lastinvoiceindex, err := rds.Get("lastinvoiceindex").Int64()
 	if err != nil {
@@ -148,15 +146,17 @@ func main() {
 
 	// start http server
 	go http.ListenAndServe("0.0.0.0:"+s.Port, nil)
-
+*/
 	// pause here until lightningd works
-	s.NodeId = probeLightningd()
+//	s.NodeId = probeLightningd()
 
 	// dispatch kick job for pending users
-	startKicking()
-
+//	startKicking()
+	bot.Debug = true
+	u := tgbotapi.NewUpdate(0)
+	updates, _ := bot.GetUpdatesChan(u)
 	for update := range updates {
-		handle(update)
+		handle(update, bundle)
 	}
 }
 
