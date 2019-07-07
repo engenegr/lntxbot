@@ -44,7 +44,7 @@ func handleInlineQuery(q *tgbotapi.InlineQuery) {
 			goto answerEmpty
 		}
 
-		bolt11, _, qrpath, err := u.makeInvoice(sats, "inline-"+q.ID, "", nil, q.ID, "")
+		bolt11, _, qrpath, err := u.makeInvoice(sats, "inline-"+q.ID, "", nil, q.ID, "", false)
 		if err != nil {
 			log.Warn().Err(err).Msg("error making invoice on inline query.")
 			goto answerEmpty
@@ -155,7 +155,7 @@ func handleInlineQuery(q *tgbotapi.InlineQuery) {
 		result := tgbotapi.NewInlineQueryResultArticle(
 			fmt.Sprintf("gifl-%d-%d-%d", u.Id, sats, nparticipants),
 			fmt.Sprintf("Give out %d sat for one out of %d participants", sats, nparticipants),
-			fmt.Sprintf("Join and get a change to win %d! %d out of %d spots left!",
+			fmt.Sprintf("Join and get a chance to win %d! %d out of %d spots left!",
 				sats, nparticipants, nparticipants),
 		)
 

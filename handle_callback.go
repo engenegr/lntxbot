@@ -129,7 +129,7 @@ func handleCallback(cb *tgbotapi.CallbackQuery) {
 
 		var howtoclaimmessage = ""
 		if claimer.ChatId == 0 {
-			howtoclaimmessage = " To manage your funds, start a conversation with @lntxbot."
+			howtoclaimmessage = " To manage your funds, start a conversation with @" + s.ServiceId + "."
 		}
 
 		appendTextToMessage(cb,
@@ -198,7 +198,7 @@ func handleCallback(cb *tgbotapi.CallbackQuery) {
 			if cb.Message != nil {
 				edit.Text = cb.Message.Text + " " + joiner.AtName()
 			} else {
-				edit.Text = fmt.Sprintf("Pay %d and get a change to win %d! %d out of %d spots left!",
+				edit.Text = fmt.Sprintf("Pay %d and get a chance to win %d! %d out of %d spots left!",
 					sats, sats*nparticipants, nparticipants-nregistered, nparticipants)
 			}
 			bot.Send(edit)
@@ -319,7 +319,7 @@ func handleCallback(cb *tgbotapi.CallbackQuery) {
 				edit.Text = cb.Message.Text + " " + joiner.AtName() + "?"
 			} else {
 				edit.Text = fmt.Sprintf(
-					"Join and get a change to win %d! %d out of %d spots left!",
+					"Join and get a chance to win %d! %d out of %d spots left!",
 					sats, nparticipants-nregistered, nparticipants)
 			}
 			bot.Send(edit)
@@ -385,7 +385,7 @@ func handleCallback(cb *tgbotapi.CallbackQuery) {
 
 			var howtoclaimmessage = ""
 			if winner.ChatId == 0 {
-				howtoclaimmessage = " To manage your funds, start a conversation with @lntxbot."
+				howtoclaimmessage = " To manage your funds, start a conversation with @" + s.ServiceId + "."
 			}
 
 			bot.Send(tgbotapi.EditMessageTextConfig{
@@ -456,7 +456,7 @@ func handleCallback(cb *tgbotapi.CallbackQuery) {
 			if cb.Message != nil {
 				edit.Text = cb.Message.Text + " " + joiner.AtName()
 			} else {
-				edit.Text = fmt.Sprintf("Pay %d and get a change to win %d! %d out of %d spots left!",
+				edit.Text = fmt.Sprintf("Pay %d and get a chance to win %d! %d out of %d spots left!",
 					sats, sats*ngivers, ngivers-nregistered, ngivers)
 			}
 			bot.Send(edit)

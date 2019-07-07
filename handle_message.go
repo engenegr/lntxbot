@@ -3,9 +3,10 @@ package main
 import (
 	"fmt"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
+	"strings"
 	"regexp"
 	"strconv"
-	"strings"
+	"time"
 
 	"github.com/docopt/docopt-go"
 	"github.com/go-telegram-bot-api/telegram-bot-api"
@@ -40,7 +41,10 @@ func handleMessage(message *tgbotapi.Message, bundle *i18n.Bundle) {
 	var (
 		opts    = make(docopt.Opts)
 		proceed = false
-		text    = regexp.MustCompile("/([a-z]+)@"+s.ServiceId).ReplaceAllString(message.Text, "/$1")
+		text    = strings.ReplaceAll(
+			regexp.MustCompile("/([a-z]+)@"+s.ServiceId).ReplaceAllString(message.Text, "/$1"),
+			"—", "--",
+		)
 	)
 
 	log.Debug().Str("t", text).Str("user", u.Username).Msg("got message")
@@ -156,10 +160,17 @@ func handleMessage(message *tgbotapi.Message, bundle *i18n.Bundle) {
 				u.notify(msgStr)
 			}
 		}
+
+		// save the fact that we didn't understand this so it can be edited and reevaluated
+		rds.Set(fmt.Sprintf("parseerror:%d", message.MessageID), "1", time.Minute*5)
+
 		return
 	}
 
 parsed:
+	// if we reached this point we should make sure the command won't be editable again
+	rds.Del(fmt.Sprintf("parseerror:%d", message.MessageID))
+
 	if opts["paynow"].(bool) {
 		opts["pay"] = true
 		opts["now"] = true
@@ -207,7 +218,7 @@ parsed:
 			preimage, _ = param.(string)
 		}
 
-		bolt11, _, qrpath, err := u.makeInvoice(sats, desc, "", nil, message.MessageID, preimage)
+		bolt11, _, qrpath, err := u.makeInvoice(sats, desc, "", nil, message.MessageID, preimage, false)
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to generate invoice")
 			msgStr, _ := translate("FailedInvoice", locale)
@@ -257,7 +268,10 @@ parsed:
 		}
 
 	gotusername:
-		anonymous, _ := opts.Bool("--anonymous")
+		anonymous := false
+		if opts["anonymously"].(bool) || opts["--anonymous"].(bool) || opts["sendanonymously"].(bool) {
+			anonymous = true
+		}
 
 		receiver, todisplayname, err = parseUsername(message, usernameval)
 		if err != nil {
@@ -361,8 +375,13 @@ parsed:
 			)
 			break
 		}
-
-		defaultNotify(fmt.Sprintf("%d sat sent to %s.", sats, todisplayname))
+		msgTempl := map[string]interface{}{
+			"User": todisplayname,
+			"Sats": sats,
+			"Warning": "",
+		}
+		msgStr, _ := translateTemplate("UserSentToUser", locale, msgTempl)
+		defaultNotify(msgStr)
 		break
 	case opts["giveaway"].(bool):
 		sats, err := opts.Int("<satoshis>")
@@ -509,7 +528,7 @@ parsed:
 			offset = limit * (page - 1)
 		}
 
-		txns, err := u.listTransactions(limit, offset)
+		txns, err := u.listTransactions(limit, offset, 16, Both)
 		if err != nil {
 			log.Warn().Err(err).Str("user", u.Username).
 				Msg("failed to list transactions")
@@ -634,9 +653,23 @@ parsed:
 				),
 			)
 		} else {
-			u.payInvoice(message.MessageID, bolt11, optmsats)
+			err := u.payInvoice(message.MessageID, bolt11, optmsats)
+			if err != nil {
+				u.notifyAsReply(err.Error(), message.MessageID)
+			}
 		}
 		break
+	case opts["bluewallet"].(bool), opts["lndhub"].(bool):
+		password := u.Password
+		if opts["refresh"].(bool) {
+			password, err = u.updatePassword()
+			if err != nil {
+				log.Warn().Err(err).Str("user", u.Username).Msg("error updating password")
+				u.notify("Error updating password. Please report this issue.")
+			}
+		}
+
+		u.notify(fmt.Sprintf("lndhub://%d:%s@%s", u.Id, password, s.ServiceURL))
 	case opts["help"].(bool):
 		command, _ := opts.String("<command>")
 		handleHelp(u, command, locale)
@@ -682,4 +715,17 @@ parsed:
 			}
 		}
 	}
+}
+
+func handleEditedMessage(message *tgbotapi.Message, bundle *i18n.Bundle) {
+	res, err := rds.Get(fmt.Sprintf("parseerror:%d", message.MessageID)).Result()
+	if err != nil {
+		return
+	}
+
+	if res != "1" {
+		return
+	}
+
+	handleMessage(message, bundle)
 }

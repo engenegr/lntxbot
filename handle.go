@@ -1,9 +1,7 @@
 package main
 
 import (
-	"fmt"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
-	"strconv"
 	"strings"
 
 	"github.com/go-telegram-bot-api/telegram-bot-api"
@@ -30,6 +28,8 @@ func handle(upd tgbotapi.Update, bundle *i18n.Bundle) {
 		handleCallback(upd.CallbackQuery)
 	} else if upd.InlineQuery != nil {
 		handleInlineQuery(upd.InlineQuery)
+	} else if upd.EditedMessage != nil {
+		handleEditedMessage(upd.EditedMessage, bundle)
 	}
 }
 
@@ -65,21 +65,11 @@ func handleInvoicePaid(payindex, msats int64, desc, hash, label string) {
 	} else {
 		// could be a ticket invoice
 		if strings.HasPrefix(label, "newmember:") {
-			parts := strings.Split(label, ":")
-			chatId, err := strconv.Atoi(parts[2])
+			receiver, err = chatOwnerFromTicketLabel(label)
 			if err != nil {
-				log.Error().Err(err).Str("label", label).Msg("failed to parse ticket invoice")
 				return
 			}
-
 			messageId = 0
-
-			receiver, err = getChatOwner(int64(chatId))
-			if err != nil {
-				log.Error().Err(err).Str("label", label).Msg("failed to get chat owner in ticket invoice handling")
-				return
-			}
-
 			preimage = ""
 		} else {
 			// otherwise we don't know what is this
@@ -96,12 +86,26 @@ func handleInvoicePaid(payindex, msats int64, desc, hash, label string) {
 		preimage,
 		label,
 	)
+	//TODO: connect locale to user property
+	locale := "en"
 	if err != nil {
+		msgTempl := map[string]interface{}{
+			"Label": label,
+			"Hash": hash,
+		}
+		msgStr, _ := translateTemplate("FailedToSavePayReq", locale, msgTempl)
 		receiver.notify(
-			"Payment received, but failed to save on database. Please report this issue: <code>" + label + "</code>, hash: <code>" + hash + "</code>",
+			msgStr,
 		)
 		return
 	}
-
-	receiver.notifyAsReply(fmt.Sprintf("Payment received: %d. /tx%s.", msats/1000, hash[:5]), messageId)
+	msgTempl := map[string]interface{}{
+		"Sats": msats/1000,
+		"Hash": hash[:5],
+	}
+	msgStr, _ := translateTemplate("PaymentRecieved", locale, msgTempl)
+	receiver.notify(
+		msgStr,
+	)
+	receiver.notifyAsReply(msgStr, messageId)
 }

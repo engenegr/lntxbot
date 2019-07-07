@@ -1,3 +1,4 @@
+CREATE EXTENSION pgcrypto;
 CREATE SCHEMA telegram;
 CREATE SCHEMA lightning;
 
@@ -5,7 +6,8 @@ CREATE TABLE telegram.account (
   id serial PRIMARY KEY,
   telegram_id int UNIQUE, -- telegram id
   username text UNIQUE, -- telegram name
-  chat_id int -- telegram private chat id
+  chat_id int, -- telegram private chat id
+  password text NOT NULL DEFAULT encode(digest(random()::text, 'sha256'), 'hex') -- used in lndhub interface
 );
 
 CREATE INDEX ON telegram.account (username);
@@ -21,7 +23,7 @@ CREATE TABLE lightning.transaction (
   time timestamp NOT NULL DEFAULT now(),
   from_id int REFERENCES telegram.account (id),
   to_id int REFERENCES telegram.account (id),
-  amount int NOT NULL, -- in msatoshis
+  amount numeric(13) NOT NULL, -- in msatoshis
   fees int NOT NULL DEFAULT 0, -- in msatoshis
   description text,
   payment_hash text UNIQUE NOT NULL DEFAULT md5(random()::text) || md5(random()::text),

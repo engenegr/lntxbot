@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,13 +20,15 @@ type User struct {
 	TelegramId int    `db:"telegram_id"`
 	Username   string `db:"username"`
 	ChatId     int64  `db:"chat_id"`
+	Password   string `db:"password"`
 }
 
 const USERFIELDS = `
   id,
   coalesce(telegram_id, 0) AS telegram_id,
   coalesce(username, '') AS username,
-  coalesce(chat_id, 0) AS chat_id
+  coalesce(chat_id, 0) AS chat_id,
+  password
 `
 
 func loadUser(id int, telegramId int) (u User, err error) {
@@ -141,6 +144,15 @@ RETURNING `+USERFIELDS,
 	}
 }
 
+func (u User) updatePassword() (newpassword string, err error) {
+	err = pg.Get(&newpassword, `
+UPDATE telegram.account
+SET password = DEFAULT WHERE id = $1
+RETURNING password;                            
+    `, u.Id)
+	return
+}
+
 func (u User) getTransaction(hash string) (txn Transaction, err error) {
 	err = pg.Get(&txn, `
 SELECT
@@ -232,6 +244,7 @@ func (u User) makeInvoice(
 	expiry *time.Duration,
 	messageId interface{},
 	preimage string,
+	bluewallet bool,
 ) (bolt11 string, hash string, qrpath string, err error) {
 	log.Debug().Str("user", u.Username).Str("desc", desc).Int("sats", sats).
 		Msg("generating invoice")
@@ -265,7 +278,7 @@ func (u User) makeInvoice(
 	res, err := ln.CallWithCustomTimeout(time.Second*40, "invoice", map[string]interface{}{
 		"msatoshi":    msatoshi,
 		"label":       label,
-		"description": desc + " [" + s.ServiceId + "/" + u.AtName() + "]",
+		"description": desc,
 		"expiry":      int(exp),
 		"preimage":    preimage,
 	})
@@ -276,13 +289,24 @@ func (u User) makeInvoice(
 	bolt11 = res.Get("bolt11").String()
 	hash = res.Get("payment_hash").String()
 
-	err = qrcode.WriteFile(strings.ToUpper(bolt11), qrcode.Medium, 256, qrImagePath(label))
-	if err != nil {
-		log.Warn().Err(err).Str("invoice", bolt11).
-			Msg("failed to generate qr.")
-		err = nil
+	if bluewallet {
+		encodedinv, _ := json.Marshal(map[string]interface{}{
+			"hash":   hash,
+			"bolt11": bolt11,
+			"desc":   desc,
+			"amount": sats,
+			"expiry": int(exp),
+		})
+		rds.Set("justcreatedbluewalletinvoice:"+strconv.Itoa(u.Id), string(encodedinv), time.Minute*10)
 	} else {
-		qrpath = qrImagePath(label)
+		err = qrcode.WriteFile(strings.ToUpper(bolt11), qrcode.Medium, 256, qrImagePath(label))
+		if err != nil {
+			log.Warn().Err(err).Str("invoice", bolt11).
+				Msg("failed to generate qr.")
+			err = nil
+		} else {
+			qrpath = qrImagePath(label)
+		}
 	}
 
 	return bolt11, hash, qrpath, nil
@@ -296,7 +320,7 @@ func (u User) payInvoice(messageId int, bolt11 string, msatoshi int) (err error)
 
 	bot.Send(tgbotapi.NewChatAction(u.ChatId, "Sending payment..."))
 	payee := inv.Get("payee").String()
-	amount := int(inv.Get("msatoshi").Int())
+	amount := inv.Get("msatoshi").Int()
 	desc := inv.Get("description").String()
 	hash := inv.Get("payment_hash").String()
 	params := map[string]interface{}{
@@ -308,7 +332,7 @@ func (u User) payInvoice(messageId int, bolt11 string, msatoshi int) (err error)
 
 	if amount == 0 {
 		// amount is optional, so let's use the provided on the command
-		amount = msatoshi
+		amount = int64(msatoshi)
 		params["msatoshi"] = msatoshi
 	}
 	if amount == 0 {
@@ -326,84 +350,113 @@ func (u User) payInvoice(messageId int, bolt11 string, msatoshi int) (err error)
 
 	fakeLabel := fmt.Sprintf("%s.pay.%s", s.ServiceId, hash)
 
-	var balance int
-	_, err = txn.Exec(`
+	if payee == s.NodeId {
+		// it's an internal invoice. mark as paid internally.
+
+		// handle ticket invoices
+		if strings.HasPrefix(desc, "Ticket for") {
+			for label, kickdata := range pendingApproval {
+				if kickdata.Hash == hash {
+					var target User
+					target, err = chatOwnerFromTicketLabel(label)
+					if err != nil {
+						return
+					}
+
+					err = u.addInternalPendingInvoice(
+						0,
+						target.Id,
+						amount,
+						hash,
+						desc,
+						label,
+					)
+					if err != nil {
+						return
+					}
+
+					ticketPaid(label, kickdata)
+					handleInvoicePaid(
+						-1,
+						amount,
+						desc,
+						hash,
+						label,
+					)
+					u.paymentHasSucceeded(messageId, float64(amount), float64(amount), "", hash)
+					break
+				}
+			}
+		}
+
+		// search the invoices list
+		invoice, ok := findInvoiceOnNode(hash, "")
+		if !ok {
+			return errors.New("Couldn't find internal invoice.")
+		}
+
+		label := invoice.Get("label").String()
+		messageId, targetId, preimage, ok := parseLabel(label)
+		if ok {
+			err = u.addInternalPendingInvoice(
+				messageId,
+				targetId,
+				amount,
+				hash,
+				desc,
+				label,
+			)
+			if err != nil {
+				return
+			}
+
+			handleInvoicePaid(
+				0,
+				amount,
+				desc,
+				hash,
+				label,
+			)
+			u.paymentHasSucceeded(messageId, float64(amount), float64(amount), preimage, hash)
+			ln.Call("delinvoice", label, "unpaid")
+		} else {
+			log.Debug().Str("label", label).Msg("what is this? an internal payment unrecognized")
+		}
+	} else {
+		// it's an invoice from elsewhere, continue and
+		// actually send the lightning payment
+
+		// insert payment as pending
+		_, err = txn.Exec(`
 INSERT INTO lightning.transaction
   (from_id, amount, description, payment_hash, label, pending, trigger_message, remote_node)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     `, u.Id, amount, desc, hash, fakeLabel, true, messageId, payee)
-	if err != nil {
-		log.Debug().Err(err).Msg("database error inserting transaction")
-		return errors.New("Payment already in course.")
-	}
-
-	err = txn.Get(&balance, `
-SELECT balance::int FROM lightning.balance WHERE account_id = $1
-    `, u.Id)
-	if err != nil {
-		log.Debug().Err(err).Msg("database error fetching balance")
-		return errors.New("Database error.")
-	}
-
-	if balance < 0 {
-		return fmt.Errorf("Insufficient balance. Needs %.0f sat more.",
-			-float64(balance)/1000)
-	}
-
-	err = txn.Commit()
-	if err != nil {
-		log.Debug().Err(err).Msg("database error committing transaction")
-		return errors.New("Database error.")
-	}
-
-	if payee == s.NodeId {
-		// it's an internal invoice. mark as paid internally.
-		var txn Transaction
-		if err := pg.Get(&txn, `
-SELECT payment_hash, preimage, label, amount
-FROM lightning.transaction
-WHERE payment_hash = $1
-  AND label != $2`,
-			hash, fakeLabel,
-		); err != nil {
-			// if it's generated here but is not in the database maybe it's a ticket invoice
-			if err == sql.ErrNoRows && strings.HasPrefix(desc, "Ticket for") {
-				for label, kickdata := range pendingApproval {
-					if kickdata.Hash == hash {
-						ticketPaid(label, kickdata)
-						handleInvoicePaid(
-							-1,
-							int64(amount),
-							desc,
-							hash,
-							label,
-						)
-						u.paymentHasSucceeded(messageId, float64(amount), float64(amount), "", hash)
-						break
-					}
-				}
-			} else {
-				return err
-			}
-		} else {
-			invpaid, err := ln.Call("listinvoices", txn.Label.String)
-			if err != nil {
-				return err
-			}
-			handleInvoicePaid(
-				invpaid.Get("pay_index").Int(),
-				invpaid.Get("msatoshi_received").Int(),
-				invpaid.Get("description").String(),
-				invpaid.Get("payment_hash").String(),
-				invpaid.Get("label").String(),
-			)
-			u.paymentHasSucceeded(messageId, txn.Amount, txn.Amount, txn.Preimage.String, txn.Hash)
+		if err != nil {
+			log.Debug().Err(err).Msg("database error inserting transaction")
+			return errors.New("Payment already in course.")
 		}
 
-		ln.Call("delinvoice", txn.Label.String, "unpaid")
-	} else {
-		// it's an invoice from elsewhere, continue and
-		// actually send the lightning payment
+		var balance int
+		err = txn.Get(&balance, `
+SELECT balance::int FROM lightning.balance WHERE account_id = $1
+    `, u.Id)
+		if err != nil {
+			log.Debug().Err(err).Msg("database error fetching balance")
+			return errors.New("Database error. Couldn't fetch balance.")
+		}
+
+		if balance < 0 {
+			return fmt.Errorf("Insufficient balance. Needs %.0f sat more.",
+				-float64(balance)/1000)
+		}
+
+		err = txn.Commit()
+		if err != nil {
+			log.Debug().Err(err).Msg("database error committing transaction")
+			return errors.New("Database error.")
+		}
+
 		go func(u User, messageId int, params map[string]interface{}) {
 			success, payment, tries, err := ln.PayAndWaitUntilResolution(bolt11, params)
 
@@ -471,6 +524,7 @@ WHERE payment_hash = $3
 			Str("hash", hash).
 			Float64("fees", fees).
 			Msg("failed to update transaction fees.")
+		u.notifyAsReply("Database error: failed to mark the transaction as not pending.", messageId)
 	}
 
 	u.notifyAsReply(fmt.Sprintf(
@@ -492,6 +546,55 @@ func (u User) paymentHasFailed(messageId int, hash string) {
 		log.Error().Err(err).Str("hash", hash).
 			Msg("failed to cancel transaction after routing failure.")
 	}
+}
+
+func (u User) addInternalPendingInvoice(
+	messageId int,
+	targetId int,
+	msats int64,
+	hash string,
+	desc, label interface{},
+) (err error) {
+	// insert payment as pending
+	txn, err := pg.BeginTxx(context.TODO(),
+		&sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		log.Debug().Err(err).Msg("database error starting transaction")
+		return errors.New("Database error.")
+	}
+	defer txn.Rollback()
+
+	_, err = txn.Exec(`
+INSERT INTO lightning.transaction
+  (from_id, to_id, amount, description, payment_hash, label, pending, trigger_message)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `, u.Id, targetId, msats, desc, hash, label, true, messageId)
+	if err != nil {
+		log.Debug().Err(err).Msg("database error inserting transaction")
+		return errors.New("Payment already in course.")
+	}
+
+	var balance int
+	err = txn.Get(&balance, `
+SELECT balance::int FROM lightning.balance WHERE account_id = $1
+    `, u.Id)
+	if err != nil {
+		log.Debug().Err(err).Msg("database error fetching balance")
+		return errors.New("Database error. Couldn't fetch balance.")
+	}
+
+	if balance < 0 {
+		return fmt.Errorf("Insufficient balance. Needs %.0f sat more.",
+			-float64(balance)/1000)
+	}
+
+	err = txn.Commit()
+	if err != nil {
+		log.Debug().Err(err).Msg("database error committing transaction")
+		return errors.New("Database error.")
+	}
+
+	return nil
 }
 
 func (u User) sendInternally(
@@ -525,7 +628,7 @@ func (u User) sendInternally(
 	}
 	defer txn.Rollback()
 
-	var balance int
+	var balance int64
 	_, err = txn.Exec(`
 INSERT INTO lightning.transaction
   (from_id, to_id, anonymous, amount, description, label, trigger_message)
@@ -536,14 +639,14 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 	}
 
 	err = txn.Get(&balance, `
-SELECT balance::int FROM lightning.balance WHERE account_id = $1
+SELECT balance::numeric(13) FROM lightning.balance WHERE account_id = $1
     `, u.Id)
 	if err != nil {
 		return "Database error.", err
 	}
 
 	if balance < 0 {
-		return fmt.Sprintf("Insufficient balance. Needs %.0f sat more.",
+		return fmt.Sprintf("Insufficient balance. Needs %.3f sat more.",
 				-float64(balance)/1000),
 			errors.New("insufficient balance")
 	}
@@ -599,7 +702,27 @@ GROUP BY b.account_id, b.balance
 	return
 }
 
-func (u User) listTransactions(limit int, offset int) (txns []Transaction, err error) {
+type InOut int
+
+const (
+	In InOut = iota
+	Out
+	Both
+)
+
+func (u User) listTransactions(limit, offset, descCharLimit int, inOrOut InOut) (txns []Transaction, err error) {
+	filterBy := func(inOrOut InOut) string {
+		switch inOrOut {
+		case In:
+			return " AND amount > 0 "
+		case Out:
+			return " AND amount < 0 "
+		case Both:
+			return ""
+		}
+		return ""
+	}
+
 	err = pg.Select(&txns, `
 SELECT * FROM (
   SELECT
@@ -607,19 +730,20 @@ SELECT * FROM (
     telegram_peer,
     anonymous,
     status,
-    CASE WHEN char_length(coalesce(description, '')) <= 16
+    CASE WHEN char_length(coalesce(description, '')) <= $4
       THEN coalesce(description, '')
-      ELSE substring(coalesce(description, '') from 0 for 15) || '…'
+      ELSE substring(coalesce(description, '') from 0 for ($4 - 1)) || '…'
     END AS description,
     amount::float/1000 AS amount,
-    payment_hash
+    payment_hash,
+    preimage
   FROM lightning.account_txn
-  WHERE account_id = $1
+  WHERE account_id = $1 `+filterBy(inOrOut)+`
   ORDER BY time DESC
   LIMIT $2
   OFFSET $3
 ) AS latest ORDER BY time ASC
-    `, u.Id, limit, offset)
+    `, u.Id, limit, offset, descCharLimit)
 	if err != nil {
 		return
 	}
