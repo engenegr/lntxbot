@@ -1,7 +1,51 @@
 No = "No"
 Yes = "Yes"
 Cancel = "Cancel"
+Canceled = "Canceled"
+Completed = "Completed"
+Error = "Error"
+Checking = "Checking"
 NotSupported = "Not supported"
+TxCanceled = "Transaction canceled."
+Unexpected = "Unexpected error: please report."
+
+HiddenSource = "Hidden message <code>{{.Id}}</code> revealed by {{.Revealer}}. You've got {{.Sats}} sat."
+HiddenReveal = "{{.Sats}} sat paid to reveal the message <code>{{.Id}}</code>."
+HiddenMsgFail = "Failed to reveal: {{.Err}}"
+HiddenMsgNotFound = "Hidden message not found."
+HiddenMsgError = "Error locating this hidden message."
+
+FundraiseComplete = "Fundraising for {{.Recepient}} completed!"
+FundraiseReceiverMsg = "You've received {{.Sats}} sat of a fundraise from {{.Donors}}s"
+FundraiseGiverMsg = "You've given {{.Donate}} in a fundraise to {{.Recepient}}s."
+
+GiveflipWinnerMsg = "{{.Winner}} got {{.Sats}} from {{.Giver}}. {{.Losers}} didn't get anything."
+GiveflipAd = "Join and get a chance to win {{.Prize}}! {{.Participants}} out of {{.MaxParticipants}} spots left!"
+
+CoinflipWinnerMsg = "You're the winner of a coinflip for a prize of {{.Prize}} sat. The losers were: {{.Losers}}."
+CoinflipGiverMsg = "You've lost {{.Prize}} in a coinflip. The winner was {{.Losers}}."
+CoinflipAd = "Pay {{.Sats}} and get a chance to win {{.Prize}}! {{.Gamblers}} out of {{.MaxPlayers}} spots left!"
+SatsGivenPublic = "{{.Sats}} sat given from {{.From}} to {{.To}}."
+HowToClaimMessage = "To manage your funds, start a conversation with @{{.ServiceId}}."
+
+CallbackCoinflipWinner = "Coinflip winner: {{.Winner}}"
+CallbackWinner = "{{.User}}\nWinner: {{.Winner}}"
+CallbackFromUser = "{{.User}} has sent you {{.Sats}} sat on {{.BotOp}}."
+CallbackFailed = "Failed to claim {{.BotOp}}: {{.Err}}"
+CallbackError = "\n\nError in {{.BotOp}}."
+CallbackExpired = "Expired {{.BotOp}}."
+CallbackAttempt = "Attempting payment."
+CallbackSending = "Sending payment."
+CallbackButtonExpired = "The payment confirmation button has expired."
+
+UserAllowed = "Invoice paid. {{.User}} allowed."
+SpamFilterMessage = "Hello, {{.User}}. You have 15min to pay the following invoice for {{.Sats}} sat if you want to stay in this group:"
+
+PaymentFailed = "Payment failed. /log{{.ShortHash}}"
+PaidMessage = "Paid with <b>{{.Sats}} sat</b> (+ {{.Fee}} fee). \n\n<b>Hash:</b> {{.Hash}}\n\n<b>Proof:</b> {{.Preimage}}\n\n/tx{{.ShortHash}}"
+DBError = "Database error: failed to mark the transaction as not pending."
+InsufficientBalance = "Insufficient balance for {{.Purpose}}. Needs {{.Sats}}.0f sat more."
+TooSmallPayment = "That's too small, please start your {{.Purpose}} with at least 40 sat."
 
 PaymentRecieved = "Payment received: {{.Sats}}. /tx{{.Hash}}."
 FailedToSavePayReq = "Payment received, but failed to save on database. Please report this issue: <code>{{.Label}}</code>, hash: <code>{{.Hash}}</code>"
@@ -95,16 +139,3 @@ RetractQuestion = "\n\nRetract unclaimed tip?"
 RecheckPending = "\n\nRecheck pending payment?"
 TxNotFound = "Couldn't find transaction {{.HashFirstChars}}."
 TxInfo = "<code>{{.Status}}</code> {{ .PeerActionDescription}} on {{.TimeFormatted}} {{ .ClaimStatus}}\n<i>{{.Description}}</i>\n<b>Payee</b>: {{{.PayeeLink}}} ({{.PayeeAlias}})\n<b>Hash</b>: {{.Hash}}\n<b>Preimage</b>: {{.PreimageString}}\n<b>Amount</b>: {{.Amount}} sat\n<b>Fee paid</b>: {{.Fees}}"
-
-Explanation = "{{.Explanation}}"
-HelloPerson = "Hello {{.Name}}"
-
-[MyUnreadEmails]
-description = "The number of unread emails I have"
-one = "I have {{.PluralCount}} unread email."
-other = "I have {{.PluralCount}} unread emails."
-
-[PersonUnreadEmails]
-description = "The number of unread emails a person has"
-one = "{{.Name}} has {{.UnreadEmailCount}} unread email."
-other = "{{.Name}} has {{.UnreadEmailCount}} unread emails."

@@ -192,6 +192,9 @@ parsed:
 			u.notify(msgStr)
 		}
 		break
+	case opts["app"].(bool), opts["lapp"].(bool):
+		handleExternalApp(u, opts, message.MessageID)
+		break
 	case opts["receive"].(bool), opts["invoice"].(bool), opts["fund"].(bool):
 		sats, err := opts.Int("<satoshis>")
 		if err != nil {
@@ -520,6 +523,45 @@ parsed:
 		rds.Expire("fundraise:"+fundraiseid, s.GiveAwayTimeout)
 		chattable.BaseChat.ReplyMarkup = fundraiseKeyboard(fundraiseid, receiver.Id, nparticipants, sats)
 		bot.Send(chattable)
+	case opts["hide"].(bool):
+		var content string
+		if icontent, ok := opts["<message>"]; ok {
+			content = strings.Join(icontent.([]string), " ")
+		}
+
+		sats, err := opts.Int("<satoshis>")
+		if err != nil || sats == 0 {
+			u.notify("Invalid amount: " + opts["<satoshis>"].(string))
+			break
+		}
+
+		hiddenid := cuid.Slug()
+		err = rds.Set(fmt.Sprintf("hidden:%d:%s:%d", u.Id, hiddenid, sats), content, s.HiddenMessageTimeout).Err()
+		if err != nil {
+			u.notify("Failed to store hidden content. Please report: " + err.Error())
+			break
+		}
+
+		u.notifyAsReply(fmt.Sprintf("Message hidden with id <code>%s</code>.", hiddenid), message.MessageID)
+	case opts["reveal"].(bool):
+		hiddenid := opts["<hidden_message_id>"].(string)
+
+		found := rds.Keys("hidden:*:" + hiddenid + ":*").Val()
+		if len(found) == 0 {
+			u.notifyAsReply("No hidden message found with the given id.", message.MessageID)
+			break
+		}
+
+		redisKey := found[0]
+		_, _, _, preview, satoshis, err := getHiddenMessage(redisKey)
+		if err != nil {
+			u.notify("Error loading hidden message. Please report: " + err.Error())
+			break
+		}
+
+		chattable := tgbotapi.NewMessage(u.ChatId, preview)
+		chattable.BaseChat.ReplyMarkup = revealKeyboard(redisKey, satoshis)
+		bot.Send(chattable)
 	case opts["transactions"].(bool):
 		// show list of transactions
 		limit := 25
@@ -669,7 +711,7 @@ parsed:
 			}
 		}
 
-		u.notify(fmt.Sprintf("lndhub://%d:%s@%s", u.Id, password, s.ServiceURL))
+		u.notify(fmt.Sprintf("<code>lndhub://%d:%s@%s</code>", u.Id, password, s.ServiceURL))
 	case opts["help"].(bool):
 		command, _ := opts.String("<command>")
 		handleHelp(u, command, locale)

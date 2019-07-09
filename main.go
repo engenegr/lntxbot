@@ -6,8 +6,10 @@ import (
 	"golang.org/x/text/language"
 	"io/ioutil"
 	"math/rand"
+	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/fiatjaf/lightningd-gjson-rpc"
@@ -28,9 +30,10 @@ type Settings struct {
 	RedisURL    string `envconfig:"REDIS_URL" required:"true"`
 	SocketPath  string `envconfig:"SOCKET_PATH" required:"true"`
 
-	InvoiceTimeout    time.Duration `envconfig:"INVOICE_TIMEOUT" default:"24h"`
-	PayConfirmTimeout time.Duration `envconfig:"PAY_CONFIRM_TIMEOUT" default:"5h"`
-	GiveAwayTimeout   time.Duration `envconfig:"GIVE_AWAY_TIMEOUT" default:"5h"`
+	InvoiceTimeout       time.Duration `envconfig:"INVOICE_TIMEOUT" default:"24h"`
+	PayConfirmTimeout    time.Duration `envconfig:"PAY_CONFIRM_TIMEOUT" default:"5h"`
+	GiveAwayTimeout      time.Duration `envconfig:"GIVE_AWAY_TIMEOUT" default:"5h"`
+	HiddenMessageTimeout time.Duration `envconfig:"HIDDEN_MESSAGE_TIMEOUT" default:5d"`
 
 	NodeId string
 	Usage  string
@@ -38,12 +41,12 @@ type Settings struct {
 
 var err error
 var s Settings
-var bundle *i18n.Bundle
 var pg *sqlx.DB
 var ln *lightning.Client
 var rds *redis.Client
 var bot *tgbotapi.BotAPI
 var log = zerolog.New(os.Stderr).Output(zerolog.ConsoleWriter{Out: os.Stderr})
+var bundle *i18n.Bundle
 
 func main() {
 	err = envconfig.Process("", &s)
@@ -91,7 +94,7 @@ func main() {
 		log.Fatal().Err(err).Msg("")
 	}
 	log.Info().Str("username", bot.Self.UserName).Msg("telegram bot authorized")
-/*
+
 	// lightningd connection
 	lastinvoiceindex, err := rds.Get("lastinvoiceindex").Int64()
 	if err != nil {
@@ -149,15 +152,13 @@ func main() {
 
 	// start http server
 	go http.ListenAndServe("0.0.0.0:"+s.Port, nil)
-*/
+
 	// pause here until lightningd works
-//	s.NodeId = probeLightningd()
+	s.NodeId = probeLightningd()
 
 	// dispatch kick job for pending users
-//	startKicking()
-	bot.Debug = true
-	u := tgbotapi.NewUpdate(0)
-	updates, _ := bot.GetUpdatesChan(u)
+	startKicking()
+
 	for update := range updates {
 		handle(update, bundle)
 	}
